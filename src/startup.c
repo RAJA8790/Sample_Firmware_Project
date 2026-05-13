@@ -24,14 +24,16 @@ void Reset_Handler(void) {
     /* Copy initialized data from FLASH to RAM */
     uint32_t *src = &_etext;
     uint32_t *dst = &_sdata;
+    uint32_t *edata = &_edata;
+    uint32_t *ebss = &_ebss;
 
-    while (dst < &_edata) {
+    while (dst < edata) {
         *dst++ = *src++;
     }
 
     /* Initialize BSS section to zero */
     dst = &_sbss;
-    while (dst < &_ebss) {
+    while (dst < ebss) {
         *dst++ = 0U;
     }
 
