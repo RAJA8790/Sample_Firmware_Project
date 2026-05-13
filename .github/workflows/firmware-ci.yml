@@ -48,7 +48,7 @@ jobs:
             --suppress=missingIncludeSystem \
             --error-exitcode=1 \
             --std=c11 \
-            src/
+            .
         # Fails the pipeline if any errors found
 
       - name: Print cppcheck version
