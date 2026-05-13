@@ -1,0 +1,237 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# GitHub Actions — Firmware CI/CD Pipeline
+#
+# Triggers:
+#   - Push to main or develop branches
+#   - Pull requests to main
+#
+# Stages:
+#   1. Static Analysis  — cppcheck code scan
+#   2. Unit Tests       — build and run tests natively
+#   3. Cross Compile    — build for ARM Cortex-M4
+#   4. Artifact Verify  — checksum and size validation
+#   5. QEMU Simulate    — run ELF on ARM emulator
+#   6. Release          — upload artifact on main branch push
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Firmware CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PROJECT_NAME: firmware_sample
+  VERSION: 1.0.0
+  BUILD_DIR: build
+
+jobs:
+
+  # ── Stage 1: Static Code Analysis ─────────────────────────────────────────
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck
+        run: |
+          cppcheck \
+            --enable=all \
+            --suppress=missingIncludeSystem \
+            --error-exitcode=1 \
+            --std=c11 \
+            src/
+        # Fails the pipeline if any errors found
+
+      - name: Print cppcheck version
+        run: cppcheck --version
+
+  # ── Stage 2: Unit Tests ───────────────────────────────────────────────────
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: static-analysis   # Only runs if static analysis passes
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install gcc
+        run: sudo apt-get update && sudo apt-get install -y gcc
+
+      - name: Build and run unit tests
+        run: make test
+
+      - name: Upload test results
+        if: always()   # Upload even if tests fail, so we can inspect
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: build/test_runner
+
+  # ── Stage 3: Cross Compile for ARM ───────────────────────────────────────
+  cross-compile:
+    name: Cross Compile (ARM Cortex-M4)
+    runs-on: ubuntu-latest
+    needs: unit-tests   # Only runs if unit tests pass
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ARM cross-compiler toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc-arm-none-eabi \
+            binutils-arm-none-eabi
+
+      - name: Show toolchain version
+        run: arm-none-eabi-gcc --version
+
+      - name: Cross compile firmware
+        run: make all
+
+      - name: Show binary size
+        run: |
+          arm-none-eabi-size build/${{ env.PROJECT_NAME }}.elf
+          ls -lh build/${{ env.PROJECT_NAME }}.bin
+
+      - name: Generate version file
+        run: echo "${{ env.VERSION }}" > build/version.txt
+
+      - name: Generate checksum
+        run: make checksum
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ env.VERSION }}-${{ github.sha }}
+          path: |
+            build/${{ env.PROJECT_NAME }}.bin
+            build/${{ env.PROJECT_NAME }}.elf
+            build/${{ env.PROJECT_NAME }}.sha256
+            build/version.txt
+          retention-days: 30
+
+  # ── Stage 4: Artifact Verification ───────────────────────────────────────
+  verify-artifact:
+    name: Artifact Verification
+    runs-on: ubuntu-latest
+    needs: cross-compile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-${{ env.VERSION }}-${{ github.sha }}
+          path: build/
+
+      - name: Make verification script executable
+        run: chmod +x scripts/verify_artifact.sh
+
+      - name: Run artifact verification
+        run: |
+          ./scripts/verify_artifact.sh \
+            build/${{ env.PROJECT_NAME }}.bin \
+            ${{ env.VERSION }}
+
+  # ── Stage 5: QEMU Emulation ───────────────────────────────────────────────
+  qemu-simulate:
+    name: QEMU Emulation Test
+    runs-on: ubuntu-latest
+    needs: verify-artifact
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-${{ env.VERSION }}-${{ github.sha }}
+          path: build/
+
+      - name: Install QEMU for ARM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-arm
+
+      - name: Run firmware on QEMU emulator
+        # Timeout after 10 seconds — firmware runs in infinite loop so
+        # we just confirm it boots and doesn't crash immediately
+        run: |
+          timeout 10s qemu-system-arm \
+            -machine lm3s6965evb \
+            -kernel build/${{ env.PROJECT_NAME }}.elf \
+            -nographic \
+            -semihosting-config enable=on,target=native \
+            || EXIT_CODE=$?
+
+          # Exit code 124 means timeout (expected — firmware loops forever)
+          # Any other non-zero code is a genuine failure
+          if [ "${EXIT_CODE}" -ne 0 ] && [ "${EXIT_CODE}" -ne 124 ]; then
+            echo "QEMU exited unexpectedly with code ${EXIT_CODE}"
+            exit 1
+          fi
+          echo "QEMU emulation completed — firmware booted successfully"
+
+  # ── Stage 6: Release (main branch only) ──────────────────────────────────
+  release:
+    name: Release Firmware
+    runs-on: ubuntu-latest
+    needs: qemu-simulate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-${{ env.VERSION }}-${{ github.sha }}
+          path: build/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}-${{ github.run_number }}
+          name: Firmware v${{ env.VERSION }} (Build ${{ github.run_number }})
+          body: |
+            ## Firmware Release v${{ env.VERSION }}
+
+            **Build:** ${{ github.run_number }}
+            **Commit:** ${{ github.sha }}
+            **Branch:** ${{ github.ref_name }}
+
+            ### Artifacts
+            - `firmware_sample.bin` — Raw binary for flashing
+            - `firmware_sample.elf` — ELF with debug symbols
+            - `firmware_sample.sha256` — Checksum for verification
+
+            ### Pipeline Stages Passed
+            - Static Analysis (cppcheck)
+            - Unit Tests
+            - Cross Compile (ARM Cortex-M4)
+            - Artifact Verification
+            - QEMU Emulation
+          files: |
+            build/${{ env.PROJECT_NAME }}.bin
+            build/${{ env.PROJECT_NAME }}.elf
+            build/${{ env.PROJECT_NAME }}.sha256
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
