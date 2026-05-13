@@ -1,106 +1,56 @@
-/**
- * @file main.c
- * @brief Main firmware entry point for ARM Cortex-M4 microcontroller
- * @author Firmware Team
- * @version 1.0.0
- */
-
-#include "main.h"
-#include "utils.h"
 #include <stdint.h>
+#include <stdbool.h>
 
-/**
- * @brief System clock frequency in Hz
- */
-#define SYSTEM_CLOCK_HZ 80000000U
+/* STM32L476xx specific definitions */
+#define GPIOA_BASE    0x48000000U
+#define RCC_BASE      0x40021000U
 
-/**
- * @brief LED GPIO port address (example: GPIO Port F)
- */
-#define LED_PORT_BASE 0x40025000U
-#define LED_PIN 3U
+/* GPIO Port A */
+volatile uint32_t *GPIOA_MODER = (uint32_t *)(GPIOA_BASE + 0x00U);
+volatile uint32_t *GPIOA_PUPDR = (uint32_t *)(GPIOA_BASE + 0x0CU);
+volatile uint32_t *GPIOA_ODR = (uint32_t *)(GPIOA_BASE + 0x14U);
 
-/**
- * @brief Initialize system clock
- * @return Status code (0 = success)
- */
-static int32_t init_system_clock(void)
-{
-    /* Configure PLL for 80 MHz operation */
-    volatile uint32_t *sysctl = (volatile uint32_t *)0x400FE000U;
-    
-    /* Enable main oscillator */
-    sysctl[0x06] |= 0x10U;  /* MOSCDIS bit */
-    
-    /* Wait for oscillator to stabilize */
-    uint32_t timeout = 10000U;
-    while ((timeout > 0U) && ((sysctl[0x0A] & 0x01U) == 0U))
-    {
-        timeout--;
-    }
-    
-    return (timeout > 0U) ? 0 : -1;
+/* Reset and Clock Control */
+volatile uint32_t *RCC_AHB2ENR = (uint32_t *)(RCC_BASE + 0x4CU);
+
+void SystemInit(void) {
+    /* Enable GPIOA clock */
+    *RCC_AHB2ENR |= (1U << 0U);
 }
 
-/**
- * @brief Initialize GPIO for LED control
- * @return Status code (0 = success)
- */
-static int32_t init_gpio(void)
-{
-    volatile uint32_t *gpio_port = (volatile uint32_t *)LED_PORT_BASE;
-    
-    /* Configure LED pin as output */
-    gpio_port[0x04] |= (1U << LED_PIN);  /* GPIO direction register */
-    
-    return 0;
+void gpio_init(void) {
+    /* Configure PA5 as output (LED) */
+    *GPIOA_MODER &= ~(3U << 10U);  /* Clear PA5 mode bits */
+    *GPIOA_MODER |= (1U << 10U);   /* Set PA5 as output */
 }
 
-/**
- * @brief Toggle LED state
- */
-static void toggle_led(void)
-{
-    volatile uint32_t *gpio_port = (volatile uint32_t *)LED_PORT_BASE;
-    gpio_port[0x00] ^= (1U << LED_PIN);  /* GPIO data register */
+void led_on(void) {
+    *GPIOA_ODR |= (1U << 5U);
 }
 
-/**
- * @brief Simple delay function
- * @param milliseconds Delay duration in milliseconds
- */
-static void delay_ms(uint32_t milliseconds)
-{
-    volatile uint32_t count = (SYSTEM_CLOCK_HZ / 3000U) * milliseconds;
-    while (count > 0U)
-    {
-        count--;
+void led_off(void) {
+    *GPIOA_ODR &= ~(1U << 5U);
+}
+
+void delay_ms(uint32_t ms) {
+    for (uint32_t i = 0U; i < ms; i++) {
+        for (uint32_t j = 0U; j < 8000U; j++) {
+            __asm__("nop");
+        }
     }
 }
 
-/**
- * @brief Main firmware entry point
- * @return Exit code
- */
-int32_t main(void)
-{
-    /* Initialize hardware */
-    if (init_system_clock() != 0)
-    {
-        return -1;
-    }
-    
-    if (init_gpio() != 0)
-    {
-        return -1;
-    }
-    
-    /* Main event loop */
-    while (1)
-    {
-        toggle_led();
+int main(void) {
+    SystemInit();
+    gpio_init();
+
+    /* Main loop: blink LED */
+    while (true) {
+        led_on();
+        delay_ms(500U);
+        led_off();
         delay_ms(500U);
     }
-    
+
     return 0;
 }
