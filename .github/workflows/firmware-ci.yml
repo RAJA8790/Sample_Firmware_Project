@@ -82,6 +82,11 @@ jobs:
 
       - name: Show binary size
         run: |
+          if [ ! -d build ]; then
+            echo "Error: build/ directory was not created by make command"
+            echo "Checking for Makefile configuration issues..."
+            exit 1
+          fi
           echo "Build artifacts:"
           ls -lh build/
 
