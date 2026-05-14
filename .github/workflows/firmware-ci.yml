@@ -52,7 +52,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gcc make
 
       - name: Build and run unit tests
-        run: make test
+        run: make -C firmware-cicd test
 
       - name: Upload test results
         if: always()
@@ -60,9 +60,9 @@ jobs:
         with:
           name: test-results
           path: build/test/
-          continue-on-error: true
+          if-no-files-found: warn
 
-  # ── Stage 3: Build Firmware ──────────────────────────────────────��────
+  # ── Stage 3: Build Firmware ──────────────────────────────────────────────
   build-firmware:
     name: Build Firmware
     runs-on: ubuntu-latest
@@ -78,18 +78,18 @@ jobs:
           sudo apt-get install -y gcc make
 
       - name: Build firmware
-        run: make build
+        run: make -C firmware-cicd native
 
       - name: Show binary size
         run: |
           echo "Build artifacts:"
-          ls -lh build/bin/
+          ls -lh build/
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: firmware-build-${{ github.sha }}
-          path: build/bin/
+          path: build/
           retention-days: 30
 
   # ── Stage 4: Integration Test ───────────────────────────────────────────
@@ -106,13 +106,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: firmware-build-${{ github.sha }}
-          path: build/bin/
+          path: build/
 
       - name: Run firmware
         run: |
-          chmod +x build/bin/firmware
+          chmod +x build/firmware_sample_native
           echo "=== Executing Firmware ==="
-          ./build/bin/firmware
+          ./build/firmware_sample_native
           if [ $? -eq 0 ]; then
             echo ""
             echo "✓ Firmware execution successful"
