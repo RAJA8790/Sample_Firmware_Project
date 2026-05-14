@@ -47,7 +47,7 @@ jobs:
             --enable=all \
             --suppress=missingIncludeSystem \
             --suppress=comparePointers \
-            --suppress=shadowFunction \ 
+            --suppress=shadowFunction \
             --error-exitcode=1 \
             --std=c11 \
             .
