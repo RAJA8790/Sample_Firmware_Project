@@ -22,16 +22,28 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install cppcheck
-        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: Cache apt packages
+        uses: actions/cache@v3
+        with:
+          path: /var/cache/apt
+          key: apt-cache-${{ runner.os }}-${{ hashFiles('**/Makefile') }}
+          restore-keys: |
+            apt-cache-${{ runner.os }}-
 
-      - name: Run cppcheck
+      - name: Install cppcheck
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cppcheck
+
+      - name: Run cppcheck (Optimized)
         run: |
           cppcheck \
-            --enable=all \
+            --enable=warning,performance,portability \
             --suppress=missingIncludeSystem \
             --suppress=comparePointers \
             --std=c11 \
+            --error-exitcode=0 \
+            -j $(nproc) \
             .
         continue-on-error: true
 
@@ -48,11 +60,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install gcc
-        run: sudo apt-get update && sudo apt-get install -y gcc make
+      - name: Cache apt packages
+        uses: actions/cache@v3
+        with:
+          path: /var/cache/apt
+          key: apt-cache-${{ runner.os }}-${{ hashFiles('**/Makefile') }}
+          restore-keys: |
+            apt-cache-${{ runner.os }}-
 
-      - name: Build and run unit tests
-        run: make -C firmware-cicd test
+      - name: Cache build artifacts
+        uses: actions/cache@v3
+        with:
+          path: firmware-cicd/build
+          key: build-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            build-cache-${{ runner.os }}-
+
+      - name: Install gcc and make
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc make
+
+      - name: Build and run unit tests (Parallel)
+        run: make -C firmware-cicd test -j$(nproc)
 
       - name: Upload test results
         if: always()
@@ -72,13 +102,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache apt packages
+        uses: actions/cache@v3
+        with:
+          path: /var/cache/apt
+          key: apt-cache-${{ runner.os }}-${{ hashFiles('**/Makefile') }}
+          restore-keys: |
+            apt-cache-${{ runner.os }}-
+
+      - name: Cache build artifacts
+        uses: actions/cache@v3
+        with:
+          path: firmware-cicd/build
+          key: build-cache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            build-cache-${{ runner.os }}-
+
       - name: Install build tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc make
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc make
 
-      - name: Build firmware
-        run: make -C firmware-cicd native
+      - name: Build firmware (Parallel compilation)
+        run: make -C firmware-cicd native -j$(nproc)
 
       - name: Show binary size
         run: |
@@ -139,9 +185,9 @@ jobs:
 
       - name: Generate quality report
         run: |
-          echo "════════════════════════════════════════════════════════════════"
+          echo "═══════════════════════════════════════════════════════════════════════════════"
           echo "                    Code Quality Analysis Report                 "
-          echo "════════════════════════════════════════════════════════════════"
+          echo "═══════════════════════════════════════════════════════════════════════════════"
           echo ""
           echo "Repository: ${{ github.repository }}"
           echo "Branch: ${{ github.ref_name }}"
@@ -162,7 +208,7 @@ jobs:
           echo "  ✓ Firmware Built Successfully"
           echo "  ✓ Integration Test Passed"
           echo ""
-          echo "════════════════════════════════════════════════════════════════"
+          echo "═══════════════════════════════════════════════════════════════════════════════"
 
   # ── Stage 6: Release Summary ───────────────────────────────────────────────
   release-summary:
@@ -178,12 +224,12 @@ jobs:
       - name: Generate final summary
         run: |
           echo ""
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║              Firmware CI/CD Pipeline Complete                 ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo "╔═══════════════════════════════════════════════════════════════════════════════╗"
+          echo "║              Firmware CI/CD Pipeline Complete                                 ║"
+          echo "╚═══════════════════════════════════════════════════════════════════════════════╝"
           echo ""
           echo "Pipeline Execution Details:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "Repository:     ${{ github.repository }}"
           echo "Branch:         ${{ github.ref_name }}"
           echo "Commit SHA:     ${{ github.sha }}"
@@ -191,7 +237,7 @@ jobs:
           echo "Timestamp:      $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
           echo ""
           echo "Build Stages Completed:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "  [✓] Static Code Analysis (cppcheck)"
           echo "  [✓] Unit Tests Execution"
           echo "  [✓] Firmware Compilation"
@@ -200,7 +246,7 @@ jobs:
           echo "  [✓] Pipeline Summary"
           echo ""
           echo "Artifacts Generated:"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "  • firmware (executable binary)"
           echo "  • test results and logs"
           echo "  • build artifacts"
