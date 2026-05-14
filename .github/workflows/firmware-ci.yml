@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-results
-          path: build/test/
+          path: firmware-cicd/build/test/
           if-no-files-found: warn
 
   # ── Stage 3: Build Firmware ──────────────────────────────────────────────
@@ -82,19 +82,19 @@ jobs:
 
       - name: Show binary size
         run: |
-          if [ ! -d build ]; then
+          if [ ! -d firmware-cicd/build ]; then
             echo "Error: build/ directory was not created by make command"
             echo "Checking for Makefile configuration issues..."
             exit 1
           fi
           echo "Build artifacts:"
-          ls -lh build/
+          ls -lh firmware-cicd/build/
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: firmware-build-${{ github.sha }}
-          path: build/
+          path: firmware-cicd/build/
           retention-days: 30
 
   # ── Stage 4: Integration Test ───────────────────────────────────────────
@@ -111,13 +111,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: firmware-build-${{ github.sha }}
-          path: build/
+          path: firmware-cicd/build/
 
       - name: Run firmware
         run: |
-          chmod +x build/firmware_sample_native
+          chmod +x firmware-cicd/build/firmware_sample_native
           echo "=== Executing Firmware ==="
-          ./build/firmware_sample_native
+          ./firmware-cicd/build/firmware_sample_native
           if [ $? -eq 0 ]; then
             echo ""
             echo "✓ Firmware execution successful"
