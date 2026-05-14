@@ -24,16 +24,16 @@ void Reset_Handler(void) {
     /* Copy initialized data from FLASH to RAM */
     uint32_t *src = &_etext;
     uint32_t *dst = &_sdata;
-    uint32_t *edata = &_edata;
-    uint32_t *ebss = &_ebss;
 
-    while (dst < edata) {
+    // cppcheck-suppress comparePointers
+    while (dst < &_edata) {
         *dst++ = *src++;
     }
 
     /* Initialize BSS section to zero */
     dst = &_sbss;
-    while (dst < ebss) {
+    // cppcheck-suppress comparePointers
+    while (dst < &_ebss) {
         *dst++ = 0U;
     }
 
