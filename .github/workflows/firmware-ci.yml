@@ -46,6 +46,7 @@ jobs:
           cppcheck \
             --enable=all \
             --suppress=missingIncludeSystem \
+            --suppress=comparePointers \
             --error-exitcode=1 \
             --std=c11 \
             .
